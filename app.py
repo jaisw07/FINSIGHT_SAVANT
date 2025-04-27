@@ -1,4 +1,7 @@
 import streamlit as st
+import requests
+import yfinance as yf
+import plotly.graph_objs as go
 from langchain_community.chat_models import ChatOllama 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -13,20 +16,42 @@ import speech_recognition as sr
 from gtts import gTTS
 import tempfile
 import os
-import base64
+
+# --- Functions ---
+
+def get_stock_chart(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="7d")  # Last 7 days
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['Close'], mode='lines', name='Close Price'))
+        fig.update_layout(title=f'{ticker} Stock Price', xaxis_title='Date', yaxis_title='Price')
+        return fig
+    except Exception as e:
+        st.error(f"Error fetching stock data: {e}")
+        return None
+
+def get_stock_news(query):
+    try:
+        # Replace 'YOUR_NEWS_API_KEY' with your actual NewsAPI key
+        api_key = '0edddf919256451199f040709a0d5611'
+        url = f'https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={api_key}'
+        response = requests.get(url)
+        data = response.json()
+        return data.get('articles', [])
+    except Exception as e:
+        st.error(f"Error fetching news: {e}")
+        return []
 
 def get_response(user_query, chat_history, vector_store):
     llm = ChatOllama(model="llama3")
-    
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-    
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         chain_type='stuff',
         retriever=vector_store.as_retriever(search_kwargs={"k": 2}),
         memory=memory
     )
-    
     result = chain({"question": user_query, "chat_history": chat_history})
     return result["answer"]
 
@@ -79,41 +104,43 @@ def process_documents(uploaded_files):
 
     return vector_store
 
+# --- App Setup ---
+
 st.set_page_config(page_title="FINSIGHT SAVANT", page_icon="🤖", layout="wide")
 
-# Sidebar
+# Sidebar Navigation
 with st.sidebar:
     st.title("FINSIGHT SAVANT")
-    uploaded_files = st.file_uploader("Upload documents", accept_multiple_files=True)
-    if st.button("Process Documents"):
-        if uploaded_files:
-            st.session_state.vector_store = process_documents(uploaded_files)
-            st.success("Documents processed successfully!")
-        else:
-            st.warning("Please upload documents first.")
-    
-    if st.button("New Chat"):
-        st.session_state.chat_history = [AIMessage(content="Hi, I’m a FINSIGHT SAVANT. How can I help you?")]
-        st.experimental_rerun()
+    page = st.radio("Go to:", ["Chatbot", "Stock Trends", "Stock News"])
 
-    st.markdown("---")
-    st.markdown("")
+# --- Page Routing ---
 
-# Main chat area
-main_container = st.container()
+if page == "Chatbot":
+    with st.sidebar:
+        uploaded_files = st.file_uploader("Upload documents", accept_multiple_files=True)
+        if st.button("Process Documents"):
+            if uploaded_files:
+                st.session_state.vector_store = process_documents(uploaded_files)
+                st.success("Documents processed successfully!")
+            else:
+                st.warning("Please upload documents first.")
 
-with main_container:
-    # Initialize chat history if it doesn't exist
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = [AIMessage(content="Hi, I’m a FINSIGHT SAVANT. How can I help you?")]
+        if st.button("New Chat"):
+            st.session_state.chat_history = [AIMessage(content="Hi, I’m a FINSIGHT SAVANT. How can I help you?")]
+            st.experimental_rerun()
 
-    # Display chat history
-    for message in st.session_state.chat_history:
-        with st.chat_message("AI" if isinstance(message, AIMessage) else "Human"):
-            st.markdown(message.content)
+    main_container = st.container()
 
-    # User input area
-    with st.container():
+    with main_container:
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = [AIMessage(content="Hi, I’m a FINSIGHT SAVANT. How can I help you?")]
+
+        # Display chat history
+        for message in st.session_state.chat_history:
+            with st.chat_message("AI" if isinstance(message, AIMessage) else "Human"):
+                st.markdown(message.content)
+
+        # User input area
         col1, col2, col3 = st.columns([0.88, 0.04, 0.04])
         with col1:
             user_query = st.text_input("Type your message here...", key="user_input", label_visibility="collapsed")
@@ -122,42 +149,69 @@ with main_container:
         with col3:
             send_button = st.button("➤")
 
-    if speak_button:
-        st.write("Listening...")
-        user_query = speech_to_text()
-        if user_query:
-            st.write(f"You said: {user_query}")
-            st.session_state.speech_input = user_query
-            st.experimental_rerun()
+        if speak_button:
+            st.write("Listening...")
+            user_query = speech_to_text()
+            if user_query:
+                st.write(f"You said: {user_query}")
+                st.session_state.speech_input = user_query
+                st.experimental_rerun()
 
-    # Check for speech input
-    if 'speech_input' in st.session_state:
-        user_query = st.session_state.speech_input
-        del st.session_state.speech_input
+        if 'speech_input' in st.session_state:
+            user_query = st.session_state.speech_input
+            del st.session_state.speech_input
 
-    if send_button or user_query:
-        if user_query:
-            st.session_state.chat_history.append(HumanMessage(content=user_query))
+        if send_button or user_query:
+            if user_query:
+                st.session_state.chat_history.append(HumanMessage(content=user_query))
 
-            with st.chat_message("Human"):
-                st.markdown(user_query)
+                with st.chat_message("Human"):
+                    st.markdown(user_query)
 
-            with st.chat_message("AI"):
-                response_container = st.empty()
-                if 'vector_store' in st.session_state:
-                    response = get_response(user_query, st.session_state.chat_history, st.session_state.vector_store)
-                else:
-                    response = "Please upload and process documents first."
-                response_container.markdown(response)
+                with st.chat_message("AI"):
+                    response_container = st.empty()
+                    if 'vector_store' in st.session_state:
+                        response = get_response(user_query, st.session_state.chat_history, st.session_state.vector_store)
+                    else:
+                        response = "Please upload and process documents first."
+                    response_container.markdown(response)
 
-                # Convert response to speech
-                audio_file = text_to_speech(response)
-                st.audio(audio_file, format='audio/mp3')
-                os.remove(audio_file)  # Delete the temporary audio file
+                    # Convert response to speech
+                    audio_file = text_to_speech(response)
+                    st.audio(audio_file, format='audio/mp3')
+                    os.remove(audio_file)
 
-            st.session_state.chat_history.append(AIMessage(content=response))
+                st.session_state.chat_history.append(AIMessage(content=response))
 
-# CSS to improve the UI
+elif page == "Stock Trends":
+    st.title("📈 Stock Trends")
+    ticker = st.text_input("Enter Stock Ticker Symbol (e.g., AAPL, TSLA, MSFT)")
+    if st.button("Get Stock Chart"):
+        if ticker:
+            fig = get_stock_chart(ticker)
+            if fig:
+                st.plotly_chart(fig)
+        else:
+            st.warning("Please enter a stock ticker symbol.")
+
+elif page == "Stock News":
+    st.title("📰 Stock News")
+    stock_query = st.text_input("Enter Company Name or Keyword for News (e.g., Tesla, Amazon)")
+    if st.button("Get News"):
+        if stock_query:
+            articles = get_stock_news(stock_query)
+            if articles:
+                for article in articles[:5]:  # Show top 5 articles
+                    st.subheader(article['title'])
+                    st.write(article['description'])
+                    st.markdown(f"[Read more]({article['url']})")
+                    st.markdown("---")
+            else:
+                st.info("No news articles found.")
+        else:
+            st.warning("Please enter a query for news.")
+
+# --- CSS ---
 st.markdown("""
 <style>
 .stTextInput > div > div > input {
@@ -171,13 +225,10 @@ st.markdown("""
     margin-top: 1px;
 }
 .stSidebar {
-    background-color: #f0f2f6;
+    background-color: #000000;
 }
 div.row-widget.stButton {
     margin-top: 1px;
 }
 </style>
-""", unsafe_allow_html=True) 
-
-# streamlit run app.py
-
+""", unsafe_allow_html=True)

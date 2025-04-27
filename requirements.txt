@@ -1,0 +1,13 @@
+streamlit
+langchain-community
+langchain-core
+langchain
+faiss-cpu
+sentence-transformers
+SpeechRecognition
+gTTS
+PyPDF2
+python-docx
+docx2txt
+pyaudio
+pypdf

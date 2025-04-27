@@ -1,0 +1,56 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load S&P 500 tickers
+sp500_tickers = pd.read_csv("https://datahub.io/core/s-and-p-500-companies/r/constituents.csv")
+
+# Download historical data
+start_date = '2014-01-01'
+end_date = '2024-06-30'
+
+def download_data(ticker):
+    stock_data = yf.download(ticker, start=start_date, end=end_date)
+    return stock_data['Adj Close']
+
+data = {ticker: download_data(ticker) for ticker in sp500_tickers['Symbol']}
+prices_df = pd.DataFrame(data)
+prices_df = pd.concat([prices_df, sp500_tickers.set_index('Symbol')['Sector']], axis=1)
+
+# Save to CSV
+prices_df.to_csv('sp500_closing_prices_by_sector.csv')
+
+# Plot Closing Prices
+def plot_closing_prices(data, n=9):
+    num_plots = len(data.columns) // n + (len(data.columns) % n > 0)
+    for i in range(num_plots):
+        subset = data.iloc[:, i*n:(i+1)*n]
+        subset.plot(subplots=True, layout=(3, 3), figsize=(15, 10), title='Closing Prices')
+        plt.show()
+
+plot_closing_prices(prices_df)
+
+# Remove Stocks with More Than Two Consecutive Days of Missing Values
+filtered_data = prices_df.dropna(thresh=prices_df.shape[0]-2, axis=1)
+
+# Calculate Log Returns
+log_returns = pd.DataFrame()
+for col in filtered_data.columns:
+    log_returns[col] = np.log(filtered_data[col]) - np.log(filtered_data[col].shift(1))
+log_returns.dropna(inplace=True)
+
+# Plot Log Returns
+plot_closing_prices(log_returns)
+
+# Remove Extreme Log Returns
+extreme_filter = log_returns.abs() <= 0.8
+log_returns_filtered = log_returns[extreme_filter.all(axis=1)]
+
+# Construct and Plot Correlation Matrix
+correlation_matrix = log_returns_filtered.corr()
+plt.figure(figsize=(10, 8))
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap='coolwarm')
+plt.title('Correlation Matrix of Log Returns')
+plt.show()

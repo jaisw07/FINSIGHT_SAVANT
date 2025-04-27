@@ -31,10 +31,19 @@ def get_stock_chart(ticker):
         st.error(f"Error fetching stock data: {e}")
         return None
 
-def get_stock_news(query):
+# def get_stock_news(query):  
+def get_stock_news():  
     try:
         # Replace 'YOUR_NEWS_API_KEY' with your actual NewsAPI key
         api_key = '0edddf919256451199f040709a0d5611'
+    #     url = f'https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={api_key}'
+    #     response = requests.get(url)
+    #     data = response.json()
+    #     return data.get('articles', [])
+    # except Exception as e:
+    #     st.error(f"Error fetching news: {e}")
+    #     return []
+        query = "stock market"  # <-- Fixed query to always fetch stock market news
         url = f'https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&apiKey={api_key}'
         response = requests.get(url)
         data = response.json()
@@ -195,21 +204,34 @@ elif page == "Stock Trends":
             st.warning("Please enter a stock ticker symbol.")
 
 elif page == "Stock News":
-    st.title("📰 Stock News")
-    stock_query = st.text_input("Enter Company Name or Keyword for News (e.g., Tesla, Amazon)")
-    if st.button("Get News"):
-        if stock_query:
-            articles = get_stock_news(stock_query)
-            if articles:
-                for article in articles[:5]:  # Show top 5 articles
-                    st.subheader(article['title'])
-                    st.write(article['description'])
-                    st.markdown(f"[Read more]({article['url']})")
-                    st.markdown("---")
-            else:
-                st.info("No news articles found.")
-        else:
-            st.warning("Please enter a query for news.")
+    # st.title("📰 Stock News")
+    # stock_query = st.text_input("Enter Company Name or Keyword for News (e.g., Tesla, Amazon)")
+    # if st.button("Get News"):
+    #     if stock_query:
+    #         articles = get_stock_news(stock_query)
+    #         if articles:
+    #             for article in articles[:5]:  # Show top 5 articles
+    #                 st.subheader(article['title'])
+    #                 st.write(article['description'])
+    #                 st.markdown(f"[Read more]({article['url']})")
+    #                 st.markdown("---")
+    #         else:
+    #             st.info("No news articles found.")
+    #     else:
+    #         st.warning("Please enter a query for news.")
+    st.title("Latest Stock Market News")
+
+    news_articles = get_stock_news()
+
+    if news_articles:
+        for article in news_articles[:10]:  # Limit to top 10 articles
+            st.subheader(article.get('title'))
+            st.write(article.get('description'))
+            st.write(f"[Read more]({article.get('url')})")
+            st.markdown("---")
+    else:
+        st.write("No news articles found.")
+
 
 # --- CSS ---
 st.markdown("""
